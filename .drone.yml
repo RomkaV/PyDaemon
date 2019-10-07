@@ -1,0 +1,130 @@
+---
+kind: pipeline
+name: publish
+
+steps:
+- name: publish-api-docker
+  image: plugins/docker
+  settings:
+    dockerfile: ./api/Dockerfile
+    context: ./api
+    purge: true
+    repo: auxilinapp/auxilin-api
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    tags:
+    - latest
+    - ${DRONE_BRANCH}
+  when:
+    event:
+    - push
+
+- name: publish-web-docker
+  image: plugins/docker
+  settings:
+    dockerfile: ./web/Dockerfile
+    context: ./web
+    purge: true
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    repo: auxilinapp/auxilin-web
+    tags:
+    - latest
+    - ${DRONE_BRANCH}
+  when:
+    event:
+    - push
+
+- name: publish-landing-docker
+  image: plugins/docker
+  settings:
+    dockerfile: ./landing/Dockerfile
+    context: ./landing
+    purge: true
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    repo: auxilinapp/auxilin-landing
+    tags:
+    - latest
+    - ${DRONE_BRANCH}
+  when:
+    event:
+    - push
+
+- name: deploy-staging-app
+  image: ezhivitsa/drone-ansible:linux-amd64
+  settings:
+    playbook: ./deploy/app/deploy-app.yml
+    inventory: ./deploy/app/hosts/staging
+    private_key:
+      from_secret: ansible_private_key
+    extra_vars_from_file:
+      from_secret: credentials
+    extra_vars: docker_tag=latest,env=staging
+  when:
+    event:
+    - push
+    status:
+    - success
+
+trigger:
+  branch:
+  - master
+  event:
+  - push
+
+---
+kind: pipeline
+name: tests
+
+steps:
+- name: run-landing-tests
+  image: node:10.16.0
+  commands:
+  - chmod +x ./bin/run-test.sh
+  - cd ./landing
+  - ../bin/run-test.sh
+  - cd ../
+  when:
+    event:
+    - pull_request
+
+- name: run-web-tests
+  image: node:10.16.0
+  commands:
+  - chmod +x ./bin/run-test.sh
+  - cd ./web
+  - ../bin/run-test.sh
+  - cd ../
+  when:
+    event:
+    - pull_request
+
+- name: run-api-tests
+  image: node:10.16.0
+  commands:
+  - chmod +x ./bin/run-test.sh
+  - cd ./api
+  - ../bin/run-test.sh
+  - cd ../
+  when:
+    event:
+    - pull_request
+
+services:
+- name: mongo
+  image: mongo:4.0.10
+- name: redis
+  image: redis:5.0.5
+
+trigger:
+ branch:
+ - master
+ event:
+ - pull_request
